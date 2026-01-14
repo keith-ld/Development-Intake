@@ -14,22 +14,26 @@ jobs:
           project-url: https://github.com/users/keith-ld/projects/1
           github-token: ${{ secrets.PROJECT_TOKEN }}
 
-      - name: Update Workflow Stage
+      - name: Set Project Fields
         env:
           GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
           ITEM_ID: ${{ steps.add_to_project.outputs.project-item-id }}
         run: |
-          # 1. Get the Full Project ID (PVT_...)
+          # 1. Fetch IDs (The CLI is reliable for 'listing', just not 'editing')
           PROJECT_ID=$(gh project list --owner "keith-ld" --format json --jq '.projects[] | select(.number==1) | .id')
-          
-          # 2. Get the Field ID for "Workflow Stage"
           FIELD_DATA=$(gh project field-list 1 --owner "keith-ld" --format json)
+          
           FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Workflow Stage") | .id')
+          OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$FIELD_ID" '.fields[] | select(.id==$f_id) | .options[] | select(.name=="New Request") | .id')
 
-          # 3. Get the Option ID for "New Request"
-          OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg field_id "$FIELD_ID" '.fields[] | select(.id==$field_id) | .options[] | select(.name=="New Request") | .id')
-
-          # 4. The Update Command
-          # We are using --project-id "$PROJECT_ID" (the long string) 
-          # and --single-select-option-id "$OPTION_ID"
-          gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$FIELD_ID" --single-select-option-id "$OPTION_ID"
+          # 2. Execute via GraphQL API
+          # This is the explicit way to tell GitHub: "Update this Item, in this Project, at this Field, with this Option"
+          gh api graphql -f query='
+            mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
+              updateProjectV2ItemFieldValue(input: {
+                projectId: $project
+                itemId: $item
+                fieldId: $field
+                value: { singleSelectOptionId: $option }
+              }) { projectV2Item { id } }
+            }' -f project="$PROJECT_ID" -f item="$ITEM_ID" -f field="$FIELD_ID" -f option="$OPTION_ID"
