@@ -4,33 +4,40 @@ on:
     types: [opened]
 
 jobs:
-  add-to-project:
+  sync_project:
     runs-on: ubuntu-latest
     steps:
-      - name: Move Issue to Project and Set Fields
+      # 1. Add the issue to your project board
+      - name: Add to Project
         uses: actions/add-to-project@v1.0.2
         with:
           project-url: https://github.com/users/keith-ld/projects/1
           github-token: ${{ secrets.PROJECT_TOKEN }}
 
-      - name: Set Workflow Stage and Business Value
+      # 2. Parse the YAML form using the IDs
+      - name: Parse Issue Body
+        uses: zentered/issue-forms-body-parser@v2.2.0
+        id: parse
+        with:
+          body: ${{ github.event.issue.body }}
+
+      # 3. Set the Project Fields using consistent variable names
+      - name: Set Project Fields
         env:
           GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
-          ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_ID: ${{ github.event.issue.node_id }}
+          # This maps specifically to your 'id: business_value'
+          VAL_BUSINESS_VALUE: ${{ fromJson(steps.parse.outputs.data).business_value.text }}
         run: |
-          # 1. Set the Workflow Stage to "New Request"
+          # A. Set Workflow Stage
           gh project item-edit --id "$ISSUE_ID" --project-id 1 --field "Workflow Stage" --value "New Request"
 
-          # 2. Extract Business Value precisely from under its header
-          SELECTED_VALUE=$(echo "$ISSUE_BODY" | grep -A 1 "### Business Value" | tail -n 1 | xargs)
-
-          # 3. Handle default if blank or "_No response_"
-          if [ -z "$SELECTED_VALUE" ] || [ "$SELECTED_VALUE" == "_No response_" ]; then
-            FINAL_VALUE="Medium"
+          # B. Business Value Logic (Default to Medium)
+          if [ -z "$VAL_BUSINESS_VALUE" ] || [ "$VAL_BUSINESS_VALUE" == "_No response_" ]; then
+            FINAL_VAL="Medium"
           else
-            FINAL_VALUE="$SELECTED_VALUE"
+            FINAL_VAL="$VAL_BUSINESS_VALUE"
           fi
 
-          # 4. Update the Project field with the final value
-          gh project item-edit --id "$ISSUE_ID" --project-id 1 --field "Business Value" --value "$FINAL_VALUE"
+          # C. Update the Project Board
+          gh project item-edit --id "$ISSUE_ID" --project-id 1 --field "Business Value" --value "$FINAL_VAL"
