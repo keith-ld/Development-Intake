@@ -1,13 +1,13 @@
 name: New Development Request
 description: Propose a new feature or project.
-title: "[Feature]: "
-labels: ["new-request"]
+title: ""
+labels: ["new-request", "feature"]
 body:
   - type: input
     id: contact
     attributes:
-      label: Requestor Name/Department
-      placeholder: e.g., Sarah / Underwriting
+      label: Requestor
+      placeholder: e.g., Sarah
     validations:
       required: true
   - type: textarea
@@ -20,10 +20,11 @@ body:
   - type: dropdown
     id: priority
     attributes:
-      label: Suggested Business Value
+      label: Business Value
       options:
         - High
         - Medium
         - Low
+      default: 1
     validations:
       required: true
