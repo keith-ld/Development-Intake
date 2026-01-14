@@ -29,9 +29,9 @@ jobs:
           # The value the user selected in the dropdown
           VAL_BUSINESS_VALUE: ${{ fromJson(steps.parse.outputs.data).business_value.text }}
         run: |
-          # A. Fetch the project's internal metadata to find the Field IDs
-          # This replaces the need for the --field flag which caused the error
-          PROJECT_DATA=$(gh project field-list 1 --owner keith-ld --format json)
+          # A. Fetch the project's internal metadata using the --user flag
+          # This fixes the "unknown owner type" error
+          PROJECT_DATA=$(gh project field-list 1 --user keith-ld --format json)
           
           ID_WORKFLOW_STAGE=$(echo "$PROJECT_DATA" | jq -r '.fields[] | select(.name=="Workflow Stage") | .id')
           ID_BUSINESS_VALUE=$(echo "$PROJECT_DATA" | jq -r '.fields[] | select(.name=="Business Value") | .id')
