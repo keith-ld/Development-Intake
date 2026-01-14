@@ -1,6 +1,6 @@
 name: New Development Request
 description: Propose a new feature or project.
-title: ""
+title: "Feature: "
 labels: ["new-request", "feature"]
 body:
   - type: input
