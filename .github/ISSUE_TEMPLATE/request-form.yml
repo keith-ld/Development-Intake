@@ -18,7 +18,7 @@ body:
     validations:
       required: true
   - type: dropdown
-    id: business_value
+    id: business-value
     attributes:
       label: Business Value
       options:
