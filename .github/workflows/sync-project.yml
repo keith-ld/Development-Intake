@@ -24,37 +24,20 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
           ITEM_ID: ${{ steps.add_to_project.outputs.project-item-id }}
-          VAL_BUSINESS_VALUE: ${{ fromJson(steps.parse.outputs.data).business_value.text }}
         run: |
-          # 1. Wait 2 seconds for GitHub's database to catch up
-          sleep 2
-
-          # 2. Get the Project's Global Node ID
+          # 1. Get the Project ID
           PROJECT_ID=$(gh project list --owner "keith-ld" --format json --jq '.projects[] | select(.number==1) | .id')
-          echo "Debug: Project ID is $PROJECT_ID"
 
-          # 3. Get Field IDs directly using a simplified query
-          # We use the project number '1' here as the CLI requires it for field-list
-          ID_WORKFLOW_STAGE=$(gh project field-list 1 --owner "keith-ld" --format json --jq '.fields[] | select(.name=="Workflow Stage") | .id')
-          ID_BUSINESS_VALUE=$(gh project field-list 1 --owner "keith-ld" --format json --jq '.fields[] | select(.name=="Business Value") | .id')
+          # 2. Get the Field ID for "Workflow Stage"
+          FIELD_DATA=$(gh project field-list 1 --owner "keith-ld" --format json)
+          FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Workflow Stage") | .id')
 
-          echo "Debug: Workflow Field ID: $ID_WORKFLOW_STAGE"
-          echo "Debug: Business Value Field ID: $ID_BUSINESS_VALUE"
+          # 3. Get the Option ID for "New Request" 
+          # This is the "missing node" the error was complaining about
+          OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg field_id "$FIELD_ID" '.fields[] | select(.id==$field_id) | .options[] | select(.name=="New Request") | .id')
 
-          # 4. Exit if IDs are missing so we don't send empty strings to GraphQL
-          if [ -z "$ID_WORKFLOW_STAGE" ] || [ -z "$ID_BUSINESS_VALUE" ]; then
-            echo "Error: One or more Field IDs could not be found."
-            exit 1
-          fi
+          echo "Debug: Field ID is $FIELD_ID"
+          echo "Debug: Option ID is $OPTION_ID"
 
-          # 5. Set Workflow Stage
-          gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$ID_WORKFLOW_STAGE" --text "New Request"
-
-          # 6. Set Business Value (Default to Medium)
-          if [ -z "$VAL_BUSINESS_VALUE" ] || [ "$VAL_BUSINESS_VALUE" == "_No response_" ]; then
-            FINAL_VAL="Medium"
-          else
-            FINAL_VAL="$VAL_BUSINESS_VALUE"
-          fi
-          
-          gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$ID_BUSINESS_VALUE" --text "$FINAL_VAL"
+          # 4. Update the field using the specific Option ID flag
+          gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$FIELD_ID" --single-select-option-id "$OPTION_ID"
