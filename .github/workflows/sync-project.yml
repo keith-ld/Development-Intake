@@ -9,7 +9,6 @@ jobs:
     steps:
       - name: Add to Project
         uses: actions/add-to-project@v1.0.2
-        id: add_to_project
         with:
           project-url: https://github.com/users/keith-ld/projects/1
           github-token: ${{ secrets.PROJECT_TOKEN }}
@@ -17,28 +16,30 @@ jobs:
       - name: Set Project Fields
         env:
           GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
-          # We grab the ID directly from the previous step output
-          RAW_ITEM_ID: ${{ steps.add_to_project.outputs.project-item-id }}
+          # The global ID of the Issue itself (starts with 'I_')
+          ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
         run: |
-          # 1. Fetch IDs
+          # 1. Fetch Project ID
           PROJECT_ID=$(gh project list --owner "keith-ld" --format json --jq '.projects[] | select(.number==1) | .id')
-          FIELD_DATA=$(gh project field-list 1 --owner "keith-ld" --format json)
           
+          # 2. Find the Item ID (the 'PVTI_' ID) by looking up the Issue ID in the project
+          # This replaces the failing output from the previous action
+          ITEM_ID=$(gh project item-list 1 --owner "keith-ld" --format json --jq ".items[] | select(.content.id==\"$ISSUE_NODE_ID\") | .id")
+
+          # 3. Fetch Field and Option IDs
+          FIELD_DATA=$(gh project field-list 1 --owner "keith-ld" --format json)
           FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Workflow Stage") | .id')
           OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$FIELD_ID" '.fields[] | select(.id==$f_id) | .options[] | select(.name=="New Request") | .id')
 
-          # 2. VALIDATION BLOCK
-          # We check every single variable. If any are empty, we print the name and exit.
-          echo "Checking variables..."
+          # 4. Final Validation
           [[ -z "$PROJECT_ID" ]] && echo "Missing: PROJECT_ID" && exit 1
-          [[ -z "$RAW_ITEM_ID" ]] && echo "Missing: ITEM_ID" && exit 1
+          [[ -z "$ITEM_ID" ]] && echo "Missing: ITEM_ID (Lookup failed for Issue $ISSUE_NODE_ID)" && exit 1
           [[ -z "$FIELD_ID" ]] && echo "Missing: FIELD_ID" && exit 1
           [[ -z "$OPTION_ID" ]] && echo "Missing: OPTION_ID" && exit 1
-          
-          echo "All IDs found. Proceeding to GraphQL update."
 
-          # 3. Direct GraphQL Mutation
-          # Using the verified variables
+          echo "Success: Found Item ID $ITEM_ID. Updating..."
+
+          # 5. Execute GraphQL Mutation
           gh api graphql -f query='
             mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
               updateProjectV2ItemFieldValue(input: {
@@ -47,4 +48,4 @@ jobs:
                 fieldId: $field
                 value: { singleSelectOptionId: $option }
               }) { projectV2Item { id } }
-            }' -f project="$PROJECT_ID" -f item="$RAW_ITEM_ID" -f field="$FIELD_ID" -f option="$OPTION_ID"
+            }' -f project="$PROJECT_ID" -f item="$ITEM_ID" -f field="$FIELD_ID" -f option="$OPTION_ID"
