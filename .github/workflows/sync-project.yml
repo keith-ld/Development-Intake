@@ -1,0 +1,36 @@
+name: Sync Intake Form
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  add-to-project:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Move Issue to Project and Set Fields
+        uses: actions/add-to-project@v1.0.2
+        with:
+          project-url: https://github.com/users/keith-ld/projects/1
+          github-token: ${{ secrets.PROJECT_TOKEN }}
+
+      - name: Set Workflow Stage and Business Value
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_ID: ${{ github.event.issue.node_id }}
+        run: |
+          # 1. Set the Workflow Stage to "New Request"
+          gh project item-edit --id "$ISSUE_ID" --project-id 1 --field "Workflow Stage" --value "New Request"
+
+          # 2. Extract Business Value precisely from under its header
+          SELECTED_VALUE=$(echo "$ISSUE_BODY" | grep -A 1 "### Business Value" | tail -n 1 | xargs)
+
+          # 3. Handle default if blank or "_No response_"
+          if [ -z "$SELECTED_VALUE" ] || [ "$SELECTED_VALUE" == "_No response_" ]; then
+            FINAL_VALUE="Medium"
+          else
+            FINAL_VALUE="$SELECTED_VALUE"
+          fi
+
+          # 4. Update the Project field with the final value
+          gh project item-edit --id "$ISSUE_ID" --project-id 1 --field "Business Value" --value "$FINAL_VALUE"
