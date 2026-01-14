@@ -29,22 +29,25 @@ jobs:
           # This pulls the choice from your YAML form
           VAL_BUSINESS_VALUE: ${{ fromJson(steps.parse.outputs.data).business_value.text }}
         run: |
-          # A. Get the internal Field IDs for your columns
-          # Using --owner "keith-ld" now that the token has read:org permissions
+          # A. Get the Project's Global Node ID (needed for the API)
+          # We search for project "1" under owner "keith-ld"
+          PROJECT_ID=$(gh project list --owner "keith-ld" --format json --jq '.projects[] | select(.number==1) | .id')
+
+          # B. Get the internal Field IDs for your columns using the Global Project ID
           PROJECT_DATA=$(gh project field-list 1 --owner "keith-ld" --format json)
           
           ID_WORKFLOW_STAGE=$(echo "$PROJECT_DATA" | jq -r '.fields[] | select(.name=="Workflow Stage") | .id')
           ID_BUSINESS_VALUE=$(echo "$PROJECT_DATA" | jq -r '.fields[] | select(.name=="Business Value") | .id')
 
-          # B. Set Workflow Stage to "New Request"
-          gh project item-edit --id "$ISSUE_ID" --project-id 1 --field-id "$ID_WORKFLOW_STAGE" --text "New Request"
+          # C. Set Workflow Stage to "New Request"
+          gh project item-edit --id "$ISSUE_ID" --project-id "$PROJECT_ID" --field-id "$ID_WORKFLOW_STAGE" --text "New Request"
 
-          # C. Logic for Business Value: Default to Medium if empty or "_No response_"
+          # D. Logic for Business Value: Default to Medium if empty
           if [ -z "$VAL_BUSINESS_VALUE" ] || [ "$VAL_BUSINESS_VALUE" == "_No response_" ]; then
             FINAL_VAL="Medium"
           else
             FINAL_VAL="$VAL_BUSINESS_VALUE"
           fi
 
-          # D. Update the Project Board using the ID
-          gh project item-edit --id "$ISSUE_ID" --project-id 1 --field-id "$ID_BUSINESS_VALUE" --text "$FINAL_VAL"
+          # E. Update the Project Board using the Global IDs
+          gh project item-edit --id "$ISSUE_ID" --project-id "$PROJECT_ID" --field-id "$ID_BUSINESS_VALUE" --text "$FINAL_VAL"
