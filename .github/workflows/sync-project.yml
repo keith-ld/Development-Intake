@@ -14,30 +14,14 @@ jobs:
           project-url: https://github.com/users/keith-ld/projects/1
           github-token: ${{ secrets.PROJECT_TOKEN }}
 
-      - name: Parse Issue Body
-        uses: zentered/issue-forms-body-parser@v2.2.0
-        id: parse
-        with:
-          body: ${{ github.event.issue.body }}
-
-      - name: Set Project Fields
+      - name: Diagnostic Check
         env:
           GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
           ITEM_ID: ${{ steps.add_to_project.outputs.project-item-id }}
         run: |
-          # 1. Get the Project ID
-          PROJECT_ID=$(gh project list --owner "keith-ld" --format json --jq '.projects[] | select(.number==1) | .id')
-
-          # 2. Get the Field ID for "Workflow Stage"
-          FIELD_DATA=$(gh project field-list 1 --owner "keith-ld" --format json)
-          FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Workflow Stage") | .id')
-
-          # 3. Get the Option ID for "New Request" 
-          # This is the "missing node" the error was complaining about
-          OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg field_id "$FIELD_ID" '.fields[] | select(.id==$field_id) | .options[] | select(.name=="New Request") | .id')
-
-          echo "Debug: Field ID is $FIELD_ID"
-          echo "Debug: Option ID is $OPTION_ID"
-
-          # 4. Update the field using the specific Option ID flag
-          gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$FIELD_ID" --single-select-option-id "$OPTION_ID"
+          echo "Testing Item ID: $ITEM_ID"
+          
+          # This command simply asks the project to describe the item.
+          # If this fails, the Item ID being returned by the 'add-to-project' step 
+          # is not the ID the CLI expects.
+          gh project item-list 1 --owner "keith-ld" --format json --jq ".items[] | select(.id==\"$ITEM_ID\")"
