@@ -4,7 +4,7 @@ title: "Feature: "
 labels: ["new-request", "feature"]
 body:
   - type: input
-    id: contact
+    id: requestor
     attributes:
       label: Requestor
       placeholder: e.g., Sarah
@@ -18,7 +18,7 @@ body:
     validations:
       required: true
   - type: dropdown
-    id: priority
+    id: business_value
     attributes:
       label: Business Value
       options:
