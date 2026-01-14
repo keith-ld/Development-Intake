@@ -29,21 +29,19 @@ jobs:
           ITEM_ID: ${{ steps.add_to_project.outputs.project-item-id }}
           VAL_BUSINESS_VALUE: ${{ fromJson(steps.parse.outputs.data).business_value.text }}
         run: |
-          # A. Get the Project's Global Node ID
+          # A. Get the Project's Global Node ID first
           PROJECT_ID=$(gh project list --owner "keith-ld" --format json --jq '.projects[] | select(.number==1) | .id')
 
-          # B. Fetch all fields to debug and find the right IDs
-          PROJECT_DATA=$(gh project field-list 1 --owner "keith-ld" --format json)
+          # B. Fetch fields using the Global PROJECT_ID instead of the number '1'
+          # This ensures the IDs are actually returned
+          PROJECT_DATA=$(gh project field-list "$PROJECT_ID" --owner "keith-ld" --format json)
           
-          # DEBUG: This will print your available fields to the Action log so we can verify names
-          echo "Available fields: $(echo "$PROJECT_DATA" | jq -r '.fields[].name')"
-
           ID_WORKFLOW_STAGE=$(echo "$PROJECT_DATA" | jq -r '.fields[] | select(.name=="Workflow Stage") | .id')
           ID_BUSINESS_VALUE=$(echo "$PROJECT_DATA" | jq -r '.fields[] | select(.name=="Business Value") | .id')
 
-          # C. Check if IDs were found before running the update
-          if [ -z "$ID_WORKFLOW_STAGE" ] || [ -z "$ID_BUSINESS_VALUE" ]; then
-            echo "ERROR: Could not find one or more Field IDs. Check the 'Available fields' list above."
+          # C. Check if IDs were found
+          if [ -z "$ID_WORKFLOW_STAGE" ] || [ "$ID_WORKFLOW_STAGE" == "null" ]; then
+            echo "ERROR: Could not find ID for Workflow Stage"
             exit 1
           fi
 
