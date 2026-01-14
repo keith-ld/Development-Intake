@@ -29,23 +29,18 @@ jobs:
           ITEM_ID: ${{ steps.add_to_project.outputs.project-item-id }}
           VAL_BUSINESS_VALUE: ${{ fromJson(steps.parse.outputs.data).business_value.text }}
         run: |
-          # A. Get the Project's Global Node ID first
+          # A. Get the Project's Global Node ID (needed for item-edit)
           PROJECT_ID=$(gh project list --owner "keith-ld" --format json --jq '.projects[] | select(.number==1) | .id')
 
-          # B. Fetch fields using the Global PROJECT_ID instead of the number '1'
-          # This ensures the IDs are actually returned
-          PROJECT_DATA=$(gh project field-list "$PROJECT_ID" --owner "keith-ld" --format json)
+          # B. Fetch fields using the project NUMBER (field-list only accepts numbers)
+          PROJECT_DATA=$(gh project field-list 1 --owner "keith-ld" --format json)
           
+          # C. Extract the specific Field IDs
           ID_WORKFLOW_STAGE=$(echo "$PROJECT_DATA" | jq -r '.fields[] | select(.name=="Workflow Stage") | .id')
           ID_BUSINESS_VALUE=$(echo "$PROJECT_DATA" | jq -r '.fields[] | select(.name=="Business Value") | .id')
 
-          # C. Check if IDs were found
-          if [ -z "$ID_WORKFLOW_STAGE" ] || [ "$ID_WORKFLOW_STAGE" == "null" ]; then
-            echo "ERROR: Could not find ID for Workflow Stage"
-            exit 1
-          fi
-
           # D. Set Workflow Stage to "New Request"
+          # This command requires the Global PROJECT_ID
           gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$ID_WORKFLOW_STAGE" --text "New Request"
 
           # E. Logic for Business Value: Default to Medium if empty
