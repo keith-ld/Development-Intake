@@ -7,45 +7,79 @@ jobs:
   sync_project:
     runs-on: ubuntu-latest
     steps:
+      # 1. Add the issue to the project board (Step 1 of your recommendation)
       - name: Add to Project
         uses: actions/add-to-project@v1.0.2
+        id: add_to_project
         with:
           project-url: https://github.com/users/keith-ld/projects/1
           github-token: ${{ secrets.PROJECT_TOKEN }}
 
+      # 2. Extract form data
+      - name: Parse Issue Body
+        uses: zentered/issue-forms-body-parser@v2.2.0
+        id: parse
+        with:
+          body: ${{ github.event.issue.body }}
+
+      # 3. Retrieve IDs and Perform Updates
       - name: Set Project Fields
         env:
           GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
-          # The global ID of the Issue itself (starts with 'I_')
           ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
+          VAL_BUSINESS_VALUE: ${{ fromJson(steps.parse.outputs.data).business_value.text }}
         run: |
-          # 1. Fetch Project ID
+          # A. Get Project Global ID
           PROJECT_ID=$(gh project list --owner "keith-ld" --format json --jq '.projects[] | select(.number==1) | .id')
-          
-          # 2. Find the Item ID (the 'PVTI_' ID) by looking up the Issue ID in the project
-          # This replaces the failing output from the previous action
-          ITEM_ID=$(gh project item-list 1 --owner "keith-ld" --format json --jq ".items[] | select(.content.id==\"$ISSUE_NODE_ID\") | .id")
 
-          # 3. Fetch Field and Option IDs
+          # B. Retrieve the ITEM_ID (PVTI_) using the CLI (Step 2 of your recommendation)
+          # We loop to allow for background indexing latency
+          ITEM_ID=""
+          for i in {1..6}; do
+            echo "Attempt $i: Fetching Project Item ID for Issue $ISSUE_NODE_ID..."
+            ITEM_ID=$(gh project item-list 1 --owner "keith-ld" --format json --jq ".items[] | select(.content.id==\"$ISSUE_NODE_ID\") | .id")
+            if [ -n "$ITEM_ID" ] && [ "$ITEM_ID" != "null" ]; then
+              echo "Success: Found Item ID $ITEM_ID"
+              break
+            fi
+            echo "Item not linked yet. Waiting 5 seconds..."
+            sleep 5
+          done
+
+          # Fail early if we still don't have a PVTI_ ID
+          if [ -z "$ITEM_ID" ]; then echo "Error: Could not resolve Issue to a Project Item ID." && exit 1; fi
+
+          # C. Fetch Field and Option IDs
           FIELD_DATA=$(gh project field-list 1 --owner "keith-ld" --format json)
-          FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Workflow Stage") | .id')
-          OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$FIELD_ID" '.fields[] | select(.id==$f_id) | .options[] | select(.name=="New Request") | .id')
+          
+          # Workflow Stage IDs
+          W_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Workflow Stage") | .id')
+          W_OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$W_FIELD_ID" '.fields[] | select(.id==$f_id) | .options[] | select(.name=="New Request") | .id')
+          
+          # Business Value IDs
+          B_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Business Value") | .id')
+          
+          # Logic for Business Value text selection (Default to Medium)
+          if [ -z "$VAL_BUSINESS_VALUE" ] || [ "$VAL_BUSINESS_VALUE" == "_No response_" ]; then
+            BV_TEXT="Medium"
+          else
+            BV_TEXT="$VAL_BUSINESS_VALUE"
+          fi
+          B_OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$B_FIELD_ID" --arg opt "$BV_TEXT" '.fields[] | select(.id==$f_id) | .options[] | select(.name==$opt) | .id')
 
-          # 4. Final Validation
-          [[ -z "$PROJECT_ID" ]] && echo "Missing: PROJECT_ID" && exit 1
-          [[ -z "$ITEM_ID" ]] && echo "Missing: ITEM_ID (Lookup failed for Issue $ISSUE_NODE_ID)" && exit 1
-          [[ -z "$FIELD_ID" ]] && echo "Missing: FIELD_ID" && exit 1
-          [[ -z "$OPTION_ID" ]] && echo "Missing: OPTION_ID" && exit 1
-
-          echo "Success: Found Item ID $ITEM_ID. Updating..."
-
-          # 5. Execute GraphQL Mutation
+          # D. Execute GraphQL Mutations
+          # 1. Update Workflow Stage
           gh api graphql -f query='
-            mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
-              updateProjectV2ItemFieldValue(input: {
-                projectId: $project
-                itemId: $item
-                fieldId: $field
-                value: { singleSelectOptionId: $option }
-              }) { projectV2Item { id } }
-            }' -f project="$PROJECT_ID" -f item="$ITEM_ID" -f field="$FIELD_ID" -f option="$OPTION_ID"
+            mutation($p: ID!, $i: ID!, $f: ID!, $o: String!) {
+              updateProjectV2ItemFieldValue(input: { projectId: $p, itemId: $i, fieldId: $f, value: { singleSelectOptionId: $o } }) {
+                projectV2Item { id }
+              }
+            }' -f p="$PROJECT_ID" -f i="$ITEM_ID" -f f="$W_FIELD_ID" -f o="$W_OPTION_ID"
+
+          # 2. Update Business Value
+          gh api graphql -f query='
+            mutation($p: ID!, $i: ID!, $f: ID!, $o: String!) {
+              updateProjectV2ItemFieldValue(input: { projectId: $p, itemId: $i, fieldId: $f, value: { singleSelectOptionId: $o } }) {
+                projectV2Item { id }
+              }
+            }' -f p="$PROJECT_ID" -f i="$ITEM_ID" -f f="$B_FIELD_ID" -f o="$B_OPTION_ID"
