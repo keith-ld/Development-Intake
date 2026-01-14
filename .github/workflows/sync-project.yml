@@ -30,8 +30,8 @@ jobs:
           VAL_BUSINESS_VALUE: ${{ fromJson(steps.parse.outputs.data).business_value.text }}
         run: |
           # A. Get the internal Field IDs for your columns
-          # Using --owner "@me" to avoid the "unknown owner type" error
-          PROJECT_DATA=$(gh project field-list 1 --owner "@me" --format json)
+          # Using --owner "keith-ld" now that the token has read:org permissions
+          PROJECT_DATA=$(gh project field-list 1 --owner "keith-ld" --format json)
           
           ID_WORKFLOW_STAGE=$(echo "$PROJECT_DATA" | jq -r '.fields[] | select(.name=="Workflow Stage") | .id')
           ID_BUSINESS_VALUE=$(echo "$PROJECT_DATA" | jq -r '.fields[] | select(.name=="Business Value") | .id')
