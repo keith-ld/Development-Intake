@@ -7,37 +7,44 @@ jobs:
   sync_project:
     runs-on: ubuntu-latest
     steps:
-      # 1. Add the issue to your project board
+      # 1. Link the new issue to the project board
       - name: Add to Project
         uses: actions/add-to-project@v1.0.2
         with:
           project-url: https://github.com/users/keith-ld/projects/1
           github-token: ${{ secrets.PROJECT_TOKEN }}
 
-      # 2. Parse the YAML form using the IDs
+      # 2. Extract form data using the ID fields from your YAML
       - name: Parse Issue Body
         uses: zentered/issue-forms-body-parser@v2.2.0
         id: parse
         with:
           body: ${{ github.event.issue.body }}
 
-      # 3. Set the Project Fields using consistent variable names
+      # 3. Define variables and run the update commands
       - name: Set Project Fields
         env:
           GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
           ISSUE_ID: ${{ github.event.issue.node_id }}
-          # This maps specifically to your 'id: business_value'
+          # The value the user selected in the dropdown
           VAL_BUSINESS_VALUE: ${{ fromJson(steps.parse.outputs.data).business_value.text }}
         run: |
-          # A. Set Workflow Stage
-          gh project item-edit --id "$ISSUE_ID" --project-id 1 --field "Workflow Stage" --value "New Request"
+          # A. Fetch the project's internal metadata to find the Field IDs
+          # This replaces the need for the --field flag which caused the error
+          PROJECT_DATA=$(gh project field-list 1 --owner keith-ld --format json)
+          
+          ID_WORKFLOW_STAGE=$(echo "$PROJECT_DATA" | jq -r '.fields[] | select(.name=="Workflow Stage") | .id')
+          ID_BUSINESS_VALUE=$(echo "$PROJECT_DATA" | jq -r '.fields[] | select(.name=="Business Value") | .id')
 
-          # B. Business Value Logic (Default to Medium)
+          # B. Set Workflow Stage to "New Request" using its ID
+          gh project item-edit --id "$ISSUE_ID" --project-id 1 --field-id "$ID_WORKFLOW_STAGE" --text "New Request"
+
+          # C. Logic for Business Value: Default to Medium if empty
           if [ -z "$VAL_BUSINESS_VALUE" ] || [ "$VAL_BUSINESS_VALUE" == "_No response_" ]; then
             FINAL_VAL="Medium"
           else
             FINAL_VAL="$VAL_BUSINESS_VALUE"
           fi
 
-          # C. Update the Project Board
-          gh project item-edit --id "$ISSUE_ID" --project-id 1 --field "Business Value" --value "$FINAL_VAL"
+          # D. Update the Business Value column using its ID
+          gh project item-edit --id "$ISSUE_ID" --project-id 1 --field-id "$ID_BUSINESS_VALUE" --text "$FINAL_VAL"
