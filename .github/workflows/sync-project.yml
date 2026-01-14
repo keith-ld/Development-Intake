@@ -7,79 +7,66 @@ jobs:
   sync_project:
     runs-on: ubuntu-latest
     steps:
-      # 1. Add the issue to the project board (Step 1 of your recommendation)
-      - name: Add to Project
-        uses: actions/add-to-project@v1.0.2
-        id: add_to_project
-        with:
-          project-url: https://github.com/users/keith-ld/projects/1
-          github-token: ${{ secrets.PROJECT_TOKEN }}
-
-      # 2. Extract form data
       - name: Parse Issue Body
         uses: zentered/issue-forms-body-parser@v2.2.0
         id: parse
         with:
           body: ${{ github.event.issue.body }}
 
-      # 3. Retrieve IDs and Perform Updates
-      - name: Set Project Fields
+      - name: Add and Update Project
         env:
           GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
-          ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
+          ISSUE_ID: ${{ github.event.issue.node_id }}
+          # Safely handle the business value text from the parser
           VAL_BUSINESS_VALUE: ${{ fromJson(steps.parse.outputs.data).business_value.text }}
         run: |
-          # A. Get Project Global ID
+          # 1. Get Project and Metadata
+          # We use number 1 as specified in your project URL
           PROJECT_ID=$(gh project list --owner "keith-ld" --format json --jq '.projects[] | select(.number==1) | .id')
-
-          # B. Retrieve the ITEM_ID (PVTI_) using the CLI (Step 2 of your recommendation)
-          # We loop to allow for background indexing latency
-          ITEM_ID=""
-          for i in {1..6}; do
-            echo "Attempt $i: Fetching Project Item ID for Issue $ISSUE_NODE_ID..."
-            ITEM_ID=$(gh project item-list 1 --owner "keith-ld" --format json --jq ".items[] | select(.content.id==\"$ISSUE_NODE_ID\") | .id")
-            if [ -n "$ITEM_ID" ] && [ "$ITEM_ID" != "null" ]; then
-              echo "Success: Found Item ID $ITEM_ID"
-              break
-            fi
-            echo "Item not linked yet. Waiting 5 seconds..."
-            sleep 5
-          done
-
-          # Fail early if we still don't have a PVTI_ ID
-          if [ -z "$ITEM_ID" ]; then echo "Error: Could not resolve Issue to a Project Item ID." && exit 1; fi
-
-          # C. Fetch Field and Option IDs
           FIELD_DATA=$(gh project field-list 1 --owner "keith-ld" --format json)
           
-          # Workflow Stage IDs
-          W_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Workflow Stage") | .id')
-          W_OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$W_FIELD_ID" '.fields[] | select(.id==$f_id) | .options[] | select(.name=="New Request") | .id')
+          # 2. ATOMIC ADD (The Fix)
+          # This mutation adds the issue and returns the PVTI_ ID in the same response.
+          # No searching or waiting required.
+          RESPONSE=$(gh api graphql -f query='
+            mutation($project: ID!, $issue: ID!) {
+              addProjectV2ItemById(input: {projectId: $project, contentId: $issue}) {
+                item { id }
+              }
+            }' -f project="$PROJECT_ID" -f issue="$ISSUE_ID")
           
-          # Business Value IDs
+          ITEM_ID=$(echo "$RESPONSE" | jq -r '.data.addProjectV2ItemById.item.id')
+          
+          if [ "$ITEM_ID" == "null" ] || [ -z "$ITEM_ID" ]; then
+            echo "Error: Atomic add failed. Response: $RESPONSE"
+            exit 1
+          fi
+          echo "Successfully generated Project Item ID: $ITEM_ID"
+
+          # 3. Get Field IDs
+          W_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Workflow Stage") | .id')
           B_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Business Value") | .id')
           
-          # Logic for Business Value text selection (Default to Medium)
-          if [ -z "$VAL_BUSINESS_VALUE" ] || [ "$VAL_BUSINESS_VALUE" == "_No response_" ]; then
-            BV_TEXT="Medium"
-          else
-            BV_TEXT="$VAL_BUSINESS_VALUE"
-          fi
+          # 4. Get Option IDs
+          W_OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$W_FIELD_ID" '.fields[] | select(.id==$f_id) | .options[] | select(.name=="New Request") | .id')
+          
+          # Default logic for Business Value
+          BV_TEXT="${VAL_BUSINESS_VALUE:-Medium}"
+          [[ "$BV_TEXT" == "_No response_" ]] && BV_TEXT="Medium"
           B_OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$B_FIELD_ID" --arg opt "$BV_TEXT" '.fields[] | select(.id==$f_id) | .options[] | select(.name==$opt) | .id')
 
-          # D. Execute GraphQL Mutations
-          # 1. Update Workflow Stage
+          # 5. Execute Updates via GraphQL
+          # This is the "Industry Standard" way that avoids the CLI's internal node resolution errors.
           gh api graphql -f query='
-            mutation($p: ID!, $i: ID!, $f: ID!, $o: String!) {
-              updateProjectV2ItemFieldValue(input: { projectId: $p, itemId: $i, fieldId: $f, value: { singleSelectOptionId: $o } }) {
-                projectV2Item { id }
+            mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){
+              updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){
+                projectV2Item{id}
               }
             }' -f p="$PROJECT_ID" -f i="$ITEM_ID" -f f="$W_FIELD_ID" -f o="$W_OPTION_ID"
 
-          # 2. Update Business Value
           gh api graphql -f query='
-            mutation($p: ID!, $i: ID!, $f: ID!, $o: String!) {
-              updateProjectV2ItemFieldValue(input: { projectId: $p, itemId: $i, fieldId: $f, value: { singleSelectOptionId: $o } }) {
-                projectV2Item { id }
+            mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){
+              updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){
+                projectV2Item{id}
               }
             }' -f p="$PROJECT_ID" -f i="$ITEM_ID" -f f="$B_FIELD_ID" -f o="$B_OPTION_ID"
