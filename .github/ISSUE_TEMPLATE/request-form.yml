@@ -1,0 +1,29 @@
+name: New Development Request
+description: Propose a new feature or project.
+title: "[Feature]: "
+labels: ["new-request"]
+body:
+  - type: input
+    id: contact
+    attributes:
+      label: Requestor Name/Department
+      placeholder: e.g., Sarah / Underwriting
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Project Description
+      description: What problem are we solving?
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Suggested Business Value
+      options:
+        - High
+        - Medium
+        - Low
+    validations:
+      required: true
