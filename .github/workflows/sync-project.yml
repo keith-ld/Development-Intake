@@ -17,17 +17,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
           ISSUE_ID: ${{ github.event.issue.node_id }}
-          # Passing the raw JSON data to inspect the structure
           RAW_DATA: ${{ steps.parse.outputs.data }}
         run: |
-          # 1. Inspect data structure
-          echo "DEBUG: Parsed Form Data: $RAW_DATA"
-
-          # 2. Get Project Metadata
+          # 1. Get Project Metadata
           PROJECT_ID=$(gh project list --owner "keith-ld" --format json --jq '.projects[] | select(.number==1) | .id')
           FIELD_DATA=$(gh project field-list 1 --owner "keith-ld" --format json)
           
-          # 3. Atomic Add (Get the PVTI_ ID)
+          # 2. Atomic Add (Get the PVTI_ ID)
           RESPONSE=$(gh api graphql -f query='
             mutation($project: ID!, $issue: ID!) {
               addProjectV2ItemById(input: {projectId: $project, contentId: $issue}) {
@@ -37,25 +33,24 @@ jobs:
           
           ITEM_ID=$(echo "$RESPONSE" | jq -r '.data.addProjectV2ItemById.item.id')
 
-          # 4. Extract Business Value
-          # This checks for the value in two common parser formats
-          BV_TEXT=$(echo "$RAW_DATA" | jq -r '.business_value.text // .business_value // "Medium"')
+          # 3. Extract Business Value (Matching the 'business-value' key found in your logs)
+          BV_TEXT=$(echo "$RAW_DATA" | jq -r '."business-value".text // ."business-value" // "Medium"')
 
-          # Sanitize: if parser returns "_No response_" or "null", default to Medium
+          # Sanitize default
           if [[ "$BV_TEXT" == "_No response_" ]] || [[ "$BV_TEXT" == "null" ]] || [[ -z "$BV_TEXT" ]]; then
             BV_TEXT="Medium"
           fi
           
           echo "Final Business Value to set: $BV_TEXT"
 
-          # 5. Get Field and Option IDs
+          # 4. Get Field and Option IDs
           W_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Workflow Stage") | .id')
-          W_OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$W_FIELD_ID" '.fields[] | select(.name=="Workflow Stage") | .options[] | select(.name=="New Request") | .id')
+          W_OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$W_FIELD_ID" '.fields[] | select(.id==$f_id) | .options[] | select(.name=="New Request") | .id')
           
           B_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Business Value") | .id')
           B_OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$B_FIELD_ID" --arg opt "$BV_TEXT" '.fields[] | select(.id==$f_id) | .options[] | select(.name==$opt) | .id')
 
-          # 6. Execute GraphQL Updates
+          # 5. Execute GraphQL Updates
           # Update Workflow Stage
           gh api graphql -f query='mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){projectV2Item{id}}}' \
             -f p="$PROJECT_ID" -f i="$ITEM_ID" -f f="$W_FIELD_ID" -f o="$W_OPTION_ID"
