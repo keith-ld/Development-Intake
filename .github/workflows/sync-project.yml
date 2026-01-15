@@ -7,38 +7,41 @@ jobs:
   sync-project:
     runs-on: ubuntu-latest
     steps:
-      - name: parse-body
+      - name: parse
         uses: zentered/issue-forms-body-parser@v2.2.0
         id: parse
         with:
           body: ${{ github.event.issue.body }}
 
-      - name: sync-to-board
+      - name: sync-and-clean
         env:
           GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
-          ISSUE_ID: ${{ github.event.issue.node_id }}
+          ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
           RAW_DATA: ${{ steps.parse.outputs.data }}
+          ORIGINAL_BODY: ${{ github.event.issue.body }}
         run: |
-          # 1. Fetch Project and Field Metadata
+          # 1. Metadata & Project Add
           PROJECT_ID=$(gh project list --owner "keith-ld" --format json --jq '.projects[] | select(.number==1) | .id')
           FIELD_DATA=$(gh project field-list 1 --owner "keith-ld" --format json)
           
-          # 2. Add Issue to Project and capture Item ID
-          ITEM_ID=$(gh api graphql -f query='mutation($p:ID!,$c:ID!){addProjectV2ItemById(input:{projectId:$p,contentId:$c}){item{id}}}' -f p="$PROJECT_ID" -f c="$ISSUE_ID" --jq '.data.addProjectV2ItemById.item.id')
+          ITEM_ID=$(gh api graphql -f query='mutation($p:ID!,$c:ID!){addProjectV2ItemById(input:{projectId:$p,contentId:$c}){item{id}}}' -f p="$PROJECT_ID" -f c="$ISSUE_NODE_ID" --jq '.data.addProjectV2ItemById.item.id')
 
-          # 3. Extract the Selection from the Form (kebab-case)
+          # 2. Extract Value & Dictionary Lookup
           BV_VAL=$(echo "$RAW_DATA" | jq -r '."business-value".text // ."business-value"')
           
-          # 4. Dictionary Lookups for Field and Option IDs
           W_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Workflow Stage") | .id')
           W_OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$W_FIELD_ID" '.fields[] | select(.id==$f_id) | .options[] | select(.name=="New Request") | .id')
           
           B_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Business Value") | .id')
           B_OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$B_FIELD_ID" --arg opt "$BV_VAL" '.fields[] | select(.id==$f_id) | .options[] | select(.name==$opt) | .id')
 
-          # 5. Database Writes
-          # Set Workflow Stage to "New Request"
+          # 3. Update Project Board Fields
           gh api graphql -f query='mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){projectV2Item{id}}}' -f p="$PROJECT_ID" -f i="$ITEM_ID" -f f="$W_FIELD_ID" -f o="$W_OPTION_ID"
-          
-          # Set Business Value to Form Selection
           gh api graphql -f query='mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){projectV2Item{id}}}' -f p="$PROJECT_ID" -f i="$ITEM_ID" -f f="$B_FIELD_ID" -f o="$B_OPTION_ID"
+
+          # 4. SCRUB THE DESCRIPTION
+          # This uses 'sed' to find "### Business Value" and the line after it, then deletes them.
+          # It then updates the issue so the Project UI "Description" is clean.
+          CLEAN_BODY=$(echo "$ORIGINAL_BODY" | sed '/### Business Value/,+2d')
+          gh issue edit "$ISSUE_NUMBER" --body "$CLEAN_BODY"
