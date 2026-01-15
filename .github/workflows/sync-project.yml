@@ -39,7 +39,3 @@ jobs:
           # 3. Update Project Board Fields
           gh api graphql -f query='mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){projectV2Item{id}}}' -f p="$PROJECT_ID" -f i="$ITEM_ID" -f f="$W_FIELD_ID" -f o="$W_OPTION_ID"
           gh api graphql -f query='mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){projectV2Item{id}}}' -f p="$PROJECT_ID" -f i="$ITEM_ID" -f f="$B_FIELD_ID" -f o="$B_OPTION_ID"
-
-          # 4. Scrub the Description (Removes the duplicative text from the UI)
-          CLEAN_BODY=$(echo "$ORIGINAL_BODY" | sed '/### Business Value/,+2d')
-          gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --body "$CLEAN_BODY"
