@@ -1,60 +1,44 @@
-name: Sync Intake Form
+name: sync-intake-form
 on:
   issues:
     types: [opened]
 
 jobs:
-  sync_project:
+  sync-project:
     runs-on: ubuntu-latest
     steps:
-      - name: Parse Issue Body
+      - name: parse-body
         uses: zentered/issue-forms-body-parser@v2.2.0
         id: parse
         with:
           body: ${{ github.event.issue.body }}
 
-      - name: Add and Update Project
+      - name: sync-to-board
         env:
           GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
           ISSUE_ID: ${{ github.event.issue.node_id }}
           RAW_DATA: ${{ steps.parse.outputs.data }}
         run: |
-          # 1. Get Project Metadata
+          # 1. Fetch Project and Field Metadata
           PROJECT_ID=$(gh project list --owner "keith-ld" --format json --jq '.projects[] | select(.number==1) | .id')
           FIELD_DATA=$(gh project field-list 1 --owner "keith-ld" --format json)
           
-          # 2. Atomic Add (Get the PVTI_ ID)
-          RESPONSE=$(gh api graphql -f query='
-            mutation($project: ID!, $issue: ID!) {
-              addProjectV2ItemById(input: {projectId: $project, contentId: $issue}) {
-                item { id }
-              }
-            }' -f project="$PROJECT_ID" -f issue="$ISSUE_ID")
+          # 2. Add Issue to Project and capture Item ID
+          ITEM_ID=$(gh api graphql -f query='mutation($p:ID!,$c:ID!){addProjectV2ItemById(input:{projectId:$p,contentId:$c}){item{id}}}' -f p="$PROJECT_ID" -f c="$ISSUE_ID" --jq '.data.addProjectV2ItemById.item.id')
+
+          # 3. Extract the Selection from the Form (kebab-case)
+          BV_VAL=$(echo "$RAW_DATA" | jq -r '."business-value".text // ."business-value"')
           
-          ITEM_ID=$(echo "$RESPONSE" | jq -r '.data.addProjectV2ItemById.item.id')
-
-          # 3. Extract Business Value (Matching the 'business-value' key found in your logs)
-          BV_TEXT=$(echo "$RAW_DATA" | jq -r '."business-value".text // ."business-value" // "Medium"')
-
-          # Sanitize default
-          if [[ "$BV_TEXT" == "_No response_" ]] || [[ "$BV_TEXT" == "null" ]] || [[ -z "$BV_TEXT" ]]; then
-            BV_TEXT="Medium"
-          fi
-          
-          echo "Final Business Value to set: $BV_TEXT"
-
-          # 4. Get Field and Option IDs
+          # 4. Dictionary Lookups for Field and Option IDs
           W_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Workflow Stage") | .id')
           W_OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$W_FIELD_ID" '.fields[] | select(.id==$f_id) | .options[] | select(.name=="New Request") | .id')
           
           B_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Business Value") | .id')
-          B_OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$B_FIELD_ID" --arg opt "$BV_TEXT" '.fields[] | select(.id==$f_id) | .options[] | select(.name==$opt) | .id')
+          B_OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$B_FIELD_ID" --arg opt "$BV_VAL" '.fields[] | select(.id==$f_id) | .options[] | select(.name==$opt) | .id')
 
-          # 5. Execute GraphQL Updates
-          # Update Workflow Stage
-          gh api graphql -f query='mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){projectV2Item{id}}}' \
-            -f p="$PROJECT_ID" -f i="$ITEM_ID" -f f="$W_FIELD_ID" -f o="$W_OPTION_ID"
-
-          # Update Business Value
-          gh api graphql -f query='mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){projectV2Item{id}}}' \
-            -f p="$PROJECT_ID" -f i="$ITEM_ID" -f f="$B_FIELD_ID" -f o="$B_OPTION_ID"
+          # 5. Database Writes
+          # Set Workflow Stage to "New Request"
+          gh api graphql -f query='mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){projectV2Item{id}}}' -f p="$PROJECT_ID" -f i="$ITEM_ID" -f f="$W_FIELD_ID" -f o="$W_OPTION_ID"
+          
+          # Set Business Value to Form Selection
+          gh api graphql -f query='mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){projectV2Item{id}}}' -f p="$PROJECT_ID" -f i="$ITEM_ID" -f f="$B_FIELD_ID" -f o="$B_OPTION_ID"
