@@ -42,7 +42,6 @@ jobs:
           elif [[ "${{ contains(github.event.issue.labels.*.name, 'incident-report') }}" == "true" ]]; then
             echo "Processing Incident: Standardizing to 'New' status completed."
             # Add specific incident logic here later if needed
-          fi
 
           # CASE C: DEV or STG Incident Report
           elif [[ "${{ contains(github.event.issue.labels.*.name, 'stg-dev-qa') }}" == "true" ]]; then
