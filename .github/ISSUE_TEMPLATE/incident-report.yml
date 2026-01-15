@@ -1,1 +1,29 @@
+name: New Reported Incident
+description: Report an incident or suspected bug.
+title: "Incident: "
+labels: ["incident-report"]
+body:
+  - type: input
+    id: requestor
+    attributes:
+      label: Requestor
+      placeholder: e.g., Sarah
+    validations:
+      required: true
 
+  - type: input
+    id: location
+    attributes:
+      label: System/Environment Location
+      description: Where did this occur?
+      placeholder: e.g., LendingDirect.com, HubSpot, etc.
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Incident Description
+      description: Define a step-by-step numerated list of how to reproduce the incident.
+    validations:
+      required: true
