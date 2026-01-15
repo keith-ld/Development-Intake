@@ -1,4 +1,4 @@
-name: New DEV/STG Testing Incident
+name: DEV/STG Testing Incident
 description: Report an issue while testing in DEV or STG.
 title: "DEV/STG/QA: "
 labels: ["stg-dev-qa"]
