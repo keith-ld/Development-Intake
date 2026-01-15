@@ -1,6 +1,6 @@
 name: New DEV/STG Testing Incident
 description: Report an issue while testing in DEV or STG.
-title: "Incident: "
+title: "DEV/STG/QA: "
 labels: ["stg-dev-qa"]
 body:
   - type: input
