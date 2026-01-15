@@ -1,4 +1,4 @@
-name: New Reported Incident
+name: New Production Incident
 description: Report an incident or suspected bug.
 title: "Incident: "
 labels: ["incident-report"]
