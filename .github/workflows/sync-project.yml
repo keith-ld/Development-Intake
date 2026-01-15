@@ -38,8 +38,14 @@ jobs:
             B_OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$B_FIELD_ID" --arg opt "$BV_VAL" '.fields[] | select(.id==$f_id) | .options[] | select(.name==$opt) | .id')
             gh api graphql -f query='mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){projectV2Item{id}}}' -f p="$PROJECT_ID" -f i="$ITEM_ID" -f f="$B_FIELD_ID" -f o="$B_OPTION_ID"
 
-          # CASE B: Incident Report (Future-proofing for location tagging or severity)
+          # CASE B: Incident Report
           elif [[ "${{ contains(github.event.issue.labels.*.name, 'incident-report') }}" == "true" ]]; then
             echo "Processing Incident: Standardizing to 'New' status completed."
+            # Add specific incident logic here later if needed
+          fi
+
+          # CASE C: DEV or STG Incident Report
+          elif [[ "${{ contains(github.event.issue.labels.*.name, 'stg-dev-qa') }}" == "true" ]]; then
+            echo "Processing DEV/STG/QA Incident: Standardizing to 'New' status completed."
             # Add specific incident logic here later if needed
           fi
