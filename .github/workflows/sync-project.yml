@@ -17,25 +17,29 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
           ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
           RAW_DATA: ${{ steps.parse.outputs.data }}
-          ORIGINAL_BODY: ${{ github.event.issue.body }}
         run: |
-          # 1. Metadata & Project Add
+          # 1. Base Setup: Project and Workflow Field
           PROJECT_ID=$(gh project list --owner "keith-ld" --format json --jq '.projects[] | select(.number==1) | .id')
           FIELD_DATA=$(gh project field-list 1 --owner "keith-ld" --format json)
-          
           ITEM_ID=$(gh api graphql -f query='mutation($p:ID!,$c:ID!){addProjectV2ItemById(input:{projectId:$p,contentId:$c}){item{id}}}' -f p="$PROJECT_ID" -f c="$ISSUE_NODE_ID" --jq '.data.addProjectV2ItemById.item.id')
 
-          # 2. Extract Value & Dictionary Lookup
-          BV_VAL=$(echo "$RAW_DATA" | jq -r '."business-value".text // ."business-value"')
-          
+          # 2. Universal "New" Status Update
           W_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Workflow Stage") | .id')
-          W_OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$W_FIELD_ID" '.fields[] | select(.id==$f_id) | .options[] | select(.name=="New Request") | .id')
-          
-          B_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Business Value") | .id')
-          B_OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$B_FIELD_ID" --arg opt "$BV_VAL" '.fields[] | select(.id==$f_id) | .options[] | select(.name==$opt) | .id')
-
-          # 3. Update Project Board Fields
+          W_OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$W_FIELD_ID" '.fields[] | select(.id==$f_id) | .options[] | select(.name=="New") | .id')
           gh api graphql -f query='mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){projectV2Item{id}}}' -f p="$PROJECT_ID" -f i="$ITEM_ID" -f f="$W_FIELD_ID" -f o="$W_OPTION_ID"
-          gh api graphql -f query='mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){projectV2Item{id}}}' -f p="$PROJECT_ID" -f i="$ITEM_ID" -f f="$B_FIELD_ID" -f o="$B_OPTION_ID"
+
+          # 3. Branching Logic for Template-Specific Data
+          
+          # CASE A: New Feature Request (Requires Business Value)
+          if [[ "${{ contains(github.event.issue.labels.*.name, 'new-request') }}" == "true" ]]; then
+            BV_VAL=$(echo "$RAW_DATA" | jq -r '."business-value".text // ."business-value"')
+            B_FIELD_ID=$(echo "$FIELD_DATA" | jq -r '.fields[] | select(.name=="Business Value") | .id')
+            B_OPTION_ID=$(echo "$FIELD_DATA" | jq -r --arg f_id "$B_FIELD_ID" --arg opt "$BV_VAL" '.fields[] | select(.id==$f_id) | .options[] | select(.name==$opt) | .id')
+            gh api graphql -f query='mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){projectV2Item{id}}}' -f p="$PROJECT_ID" -f i="$ITEM_ID" -f f="$B_FIELD_ID" -f o="$B_OPTION_ID"
+
+          # CASE B: Incident Report (Future-proofing for location tagging or severity)
+          elif [[ "${{ contains(github.event.issue.labels.*.name, 'incident-report') }}" == "true" ]]; then
+            echo "Processing Incident: Standardizing to 'New' status completed."
+            # Add specific incident logic here later if needed
+          fi
