@@ -1,6 +1,6 @@
 name: New Production Incident
 description: Report an incident or suspected bug.
-title: "Incident: "
+title: "INCIDENT: "
 labels: ["incident-report"]
 body:
   - type: input
