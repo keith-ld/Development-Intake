@@ -26,5 +26,6 @@ body:
         - Medium
         - Low
       default: 1
+      render: false # This hides it from the issue description body
     validations:
       required: true
