@@ -1,0 +1,32 @@
+name: New DEV/STG/QA Incident
+description: Report an issue while testing in DEV or STG.
+title: "Incident: "
+labels: ["stg-dev-qa"]
+body:
+  - type: input
+    id: requestor
+    attributes:
+      label: Requestor
+      placeholder: e.g., Sarah
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      description: In which environment was this issue discovered?
+      options:
+        - Development
+        - Staging
+      default: 0
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Incident Description
+      description: Define a step-by-step numerated list of how to reproduce the incident.
+    validations:
+      required: true
